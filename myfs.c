@@ -75,8 +75,35 @@ int putblock (int blocknum, void *buf)
 
 
 int myfs_diskcreate (char *vdisk)
-{
-  return(0); 
+{	
+	int size, numblocks, ret, n, fd, i;
+	char buf[BLOCKSIZE]; 
+
+	size = DISKSIZE; 
+	numblocks = DISKSIZE / BLOCKSIZE; 
+
+	printf ("diskname=%s size=%d blocks=%d\n", vdisk, size, numblocks); 
+	ret = open (vdisk,  O_CREAT | O_RDWR, 0666); 	
+	if (ret == -1) {
+		printf ("could not create disk\n"); 
+		return -1;
+	}
+					
+	bzero ((void *)buf, BLOCKSIZE); 
+	fd = open (vdisk, O_RDWR); 
+	for (i=0; i < (size / BLOCKSIZE); ++i) {
+		printf ("block=%d\n", i); 
+		n = write (fd, buf, BLOCKSIZE); 
+		if (n != BLOCKSIZE) {
+			printf ("write error\n");
+			return -1;
+		}
+	}	
+	close (fd); 
+						
+	printf ("created a virtual disk=%s of size=%d\n", vdisk, size);	
+
+  	return(0); 
 }
 
 

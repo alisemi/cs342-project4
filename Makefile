@@ -1,13 +1,12 @@
 
-
-all:  libmyfs.a  app createdisk formatdisk
+all: libmyfs.a  app createdisk formatdisk tester
 
 libmyfs.a:  	myfs.c
 	gcc -Wall -c myfs.c
-	ar -cvq  libmyfs.a myfs.o
+	ar -cvr  libmyfs.a myfs.o
 	ranlib libmyfs.a
 
-app: 	app.c
+app: 	app.c libmyfs.a
 	gcc -Wall -o app app.c  -L. -lmyfs
 
 createdisk: createdisk.c
@@ -16,5 +15,10 @@ createdisk: createdisk.c
 formatdisk: formatdisk.c
 	gcc -Wall -o formatdisk formatdisk.c -L. -lmyfs
 
+tester: tester.c libmyfs.a
+	gcc -Wall -o tester tester.c -L. -lmyfs
+
 clean: 
-	rm -fr *.o *.a *~ a.out app createdisk formatdisk
+	rm -fr *.o *.a *~ a.out app createdisk formatdisk tester
+
+
