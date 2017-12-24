@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/types.h>
@@ -7,12 +8,48 @@
 #include <fcntl.h>
 
 #include "myfs.h"
+#include "perProcessLinkedList.h"
+
+typedef struct fcb{
+	char filename[32];
+	int startAddress;
+} fcb;
+
+
+typedef struct system_wide_entry {
+	fcb *fcb_instance;
+	int count;
+}system_wide_entry;
+
+
+typedef struct per_process_entry {
+	int fcb_index;//fcb pointer
+	int file_poisiton;
+}per_process_entry;
+
+
+typedef struct volume_control {
+	int numberOfBlocks;
+	int sizeOfBlocks;
+	int freeBlockCount;
+	char nameOfDisk[32];
+	int fcbCount;
+	int freeFCB;
+	int pointerToFAT;
+	int pointerToFCB;
+}volume_control;
+
 
 // Global Variables
 char disk_name[128];   // name of virtual disk file
 int  disk_size;        // size in bytes - a power of 2
 int  disk_fd;          // disk file handle
 int  disk_blockcount;  // block count on disk
+const int fatBlockSize = 24;
+
+system_wide_entry* system_wide_table;
+per_process_entry* per_process_table;
+int file_descriptor_index;
 
 
 /* 
@@ -92,7 +129,7 @@ int myfs_diskcreate (char *vdisk)
 	bzero ((void *)buf, BLOCKSIZE); 
 	fd = open (vdisk, O_RDWR); 
 	for (i=0; i < (size / BLOCKSIZE); ++i) {
-		printf ("block=%d\n", i); 
+		//printf ("block=%d\n", i); 
 		n = write (fd, buf, BLOCKSIZE); 
 		if (n != BLOCKSIZE) {
 			printf ("write error\n");
@@ -122,6 +159,71 @@ int myfs_makefs(char *vdisk)
 	
 	// perform your format operations here. 
 	printf ("formatting disk=%s, size=%d\n", vdisk, disk_size); 
+	
+	//Volume Control
+	volume_control* myVolumeControl = (volume_control*) malloc( sizeof(volume_control) );
+	myVolumeControl->numberOfBlocks = BLOCKCOUNT;
+	myVolumeControl->sizeOfBlocks = BLOCKSIZE;
+	
+	myVolumeControl->freeBlockCount = (3/4) * BLOCKCOUNT;
+	strncpy(myVolumeControl->nameOfDisk, vdisk, 32);
+	myVolumeControl->fcbCount = 0;
+	myVolumeControl->freeFCB = MAXFILECOUNT;
+	myVolumeControl->pointerToFAT = 3*BLOCKSIZE;
+	myVolumeControl->pointerToFCB = 1*BLOCKSIZE;
+
+	printf("%lu\n", sizeof(myVolumeControl) );
+
+	/*
+	volume_control* temp = realloc( myVolumeControl, 4096);
+	if( temp != NULL) {
+		myVolumeControl = temp;
+	}
+	*/
+	printf("%lu\n", sizeof(myVolumeControl) );
+	
+	if( putblock ( 1, myVolumeControl) != 0 ){
+		printf("error while putting volumeControl block\n");
+		exit(1);
+	}
+
+	volume_control* temp = (volume_control*) malloc( sizeof(volume_control) );
+	getblock( 1, temp);
+	printf("%d\n", temp->freeFCB);
+
+	/*
+	char *temp = (char*) malloc( sizeof(char));
+	memcpy(temp, myVolumeControl, sizeof(myVolumeControl));
+	*/
+
+
+	//FAT
+	for(int index = 1; index < fatBlockSize; index++){
+		int *a;
+		a = malloc(BLOCKSIZE);
+		for(int i = 0; i < BLOCKSIZE; i += 1){
+			a[i] = -1;
+		}
+		putblock(index+3, a);
+	}
+
+	//FCB
+	fcb *a = malloc(sizeof(fcb)*64);
+	fcb *b = malloc(sizeof(fcb)*64);
+	//a[0].filename = "cevat";
+	//strcpy(a[0].filename, "cevat");
+	//a[0].startAddress = 0;
+	for(int index = 0; index < 64; index++){
+		strcpy(a[index].filename, "");
+		a[index].startAddress = -1;
+		strcpy(b[index].filename, "");
+		b[index].startAddress = -1;
+	}
+	//put_fcbs(&a);
+	
+	putblock(1, a);
+	putblock(2, b);
+	
 
 	fsync (disk_fd); 
 	close (disk_fd); 
@@ -159,6 +261,10 @@ int myfs_mount (char *vdisk)
 	// perform your mount operations here
 
 	// write your code
+	system_wide_entry* system_wide_table = malloc(128*sizeof(system_wide_entry));
+	file_descriptor_index = 0;
+
+
 	
 	/* you can place these returns wherever you want. Below
 	   we put them at the end of functions so that compiler will not
@@ -279,4 +385,27 @@ void myfs_print_blocks (char *  filename)
 
 }
 
+//Internal functions
+int get_fat(int index){
+	int block = index / 1024;
+	int seek = index % 1024;
+
+	int *a;
+	a = malloc(BLOCKSIZE);
+	getblock(block, (void*)a);
+	return a[seek];
+	
+}
+
+int put_fat(int index, int value){
+	int block = index / 1024;
+	int seek = index % 1024;
+
+	int *a;
+	a = malloc(BLOCKSIZE);
+	getblock(block, (void*)a);
+	a[seek] = value;
+	putblock(block, (void*)a);
+	return a[seek];
+}
 

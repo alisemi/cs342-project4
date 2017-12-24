@@ -20,5 +20,10 @@ int main( int argc, char *argv[] ) {
 		printf ("file %s created\n", "example"); 
 	}
 
+	myfs_makefs("example");
+
+
+	
+
 	return 0;
 }

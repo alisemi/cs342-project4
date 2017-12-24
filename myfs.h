@@ -8,6 +8,7 @@
 #define BLOCKCOUNT      (DISKSIZE / BLOCKSIZE)
 #define MAXOPENFILES       64      // files
 #define MAXREADWRITE      1024     // bytes; max read/write amount
+#define STARTOFDATABLOCKS 8192
 
 // The following will be use to create and format a disk
 int myfs_diskcreate(char *diskname);
