@@ -23,6 +23,7 @@ typedef struct system_wide_entry {
 }system_wide_entry;
 
 
+
 typedef struct per_process_entry {
 	int fcb_index;//fcb pointer
 	int file_position;
@@ -41,6 +42,12 @@ typedef struct volume_control {
 	int buffer;
 }volume_control;
 
+struct process_node {
+	per_process_entry data;
+	int key;
+	struct process_node *next;
+};
+
 
 // Global Variables
 char disk_name[128];   // name of virtual disk file
@@ -50,7 +57,6 @@ int  disk_blockcount;  // block count on disk
 const int fatBlockSize = 24;
 
 system_wide_entry* system_wide_table;
-per_process_entry* per_process_table;
 int file_descriptor_index;
 int **fatTableCached = NULL;
 volume_control* volumeControlCached = NULL;
@@ -301,8 +307,12 @@ int myfs_mount (char *vdisk)
 	// performing your mount operations here
 
 	//System_wide_entry
-	system_wide_entry* system_wide_table = malloc(128*sizeof(system_wide_entry));
-	
+	system_wide_table = malloc(128*sizeof(system_wide_entry));
+	for( int i = 0; i < 128; i++) {
+		system_wide_table[i].fcb_instance = NULL;
+		system_wide_table[i].count = 0;
+	}
+
 	//Per-process-table, implemented as linked list
 	
 	file_descriptor_index = 0;
@@ -412,6 +422,19 @@ int myfs_umount()
 	fatTableCached = NULL;
 
 
+	//Free perProcessLinked list
+	p_destroyList();
+
+	//Free system_wide_table
+	for( int i = 0; i < 128; i++) {
+		if( system_wide_table[i].fcb_instance != NULL) {
+			free(system_wide_table[i].fcb_instance );
+		}
+	}
+	
+	free(system_wide_table);
+	system_wide_table = NULL;
+
 	fsync (disk_fd); 
 	close (disk_fd); 
 	return (0); 
@@ -509,10 +532,62 @@ int myfs_create(char *filename)
 /* open file filename */
 int myfs_open(char *filename)
 {
-	int index = -1; 
+	int index = -1;
+	int fcbIndex = -1;
 	
-	// write your code
-       
+	//FCB - is divided into two blocks	
+	fcb *a = malloc(sizeof(fcb)*64);
+	fcb *b = malloc(sizeof(fcb)*64);
+	
+	getblock(1, a);
+	getblock(2, b);
+
+	fcb *temp_fcb = malloc( sizeof(fcb) );
+
+	//Find the file in the FCB
+	for( int i = 0; i < 64; i++) {
+		if( strcmp( a[i].filename, filename) == 0) {//That means a file with the same file name exists
+			strncpy( temp_fcb->filename, a[i].filename, 32);
+			temp_fcb->startAddress = a[i].startAddress;
+			fcbIndex = i;
+			break;
+		}
+		else if( strcmp( b[i].filename, filename) == 0) {
+			strncpy( temp_fcb->filename, a[i].filename, 32);
+			temp_fcb->startAddress = a[i].startAddress;
+			fcbIndex = i+64;
+			break;
+		}
+	}
+
+	//Check if the file is already opened
+	if( fcbIndex > -1) { //then file is created and has entry in fcb
+		printf("fcbIndex is %d\n", fcbIndex);
+		if( system_wide_table[fcbIndex].count <= 0 ) { //then no entry in the system_wide_table yet
+			//system_wide_table[fcbIndex].count = 1;
+			printf("adding the fcb to system_wide\n");
+			system_wide_table[fcbIndex].fcb_instance = malloc( sizeof(fcb) );
+			system_wide_table[fcbIndex].fcb_instance->startAddress = temp_fcb->startAddress;
+			strncpy(system_wide_table[fcbIndex].fcb_instance->filename, temp_fcb->filename, 32);
+		}
+		//adding the per_process_entry
+		printf("adding the per_process_entry\n");
+
+		system_wide_table[fcbIndex].count += 1;
+		per_process_entry new_entry;
+		new_entry.fcb_index = fcbIndex;
+		new_entry.file_position = 0;
+		p_insertFirst( file_descriptor_index, new_entry);
+		index = file_descriptor_index;
+		file_descriptor_index++;
+	}
+
+	//free
+	free(temp_fcb);
+       	free(a);
+	free(b);
+
+
 	return (index); 
 }
 

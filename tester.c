@@ -28,6 +28,13 @@ int main( int argc, char *argv[] ) {
 	myfs_mount("example");
 
 	myfs_create("example_file");
+	
+	myfs_open("example_file");
+	myfs_open("example_file");
+
+	myfs_open("non-existing file");
+
+	printf("File is created\n");
 
 	myfs_umount("example");
 	
