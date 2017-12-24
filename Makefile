@@ -1,9 +1,10 @@
 
 all: libmyfs.a  app createdisk formatdisk tester
 
+
 libmyfs.a:  	myfs.c
-	gcc -Wall -c myfs.c
-	ar -cvr  libmyfs.a myfs.o
+	gcc -Wall -c myfs.c perProcessLinkedList.c
+	ar -cvr  libmyfs.a myfs.o perProcessLinkedList.o
 	ranlib libmyfs.a
 
 app: 	app.c libmyfs.a

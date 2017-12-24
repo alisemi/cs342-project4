@@ -20,9 +20,16 @@ int main( int argc, char *argv[] ) {
 		printf ("file %s created\n", "example"); 
 	}
 
+
 	myfs_makefs("example");
+	
+	myfs_umount("example");
 
+	myfs_mount("example");
 
+	myfs_create("example_file");
+
+	myfs_umount("example");
 	
 
 	return 0;

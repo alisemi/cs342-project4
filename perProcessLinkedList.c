@@ -6,7 +6,7 @@
 
 typedef struct per_process_entry {
 	int fcb_index;//fcb pointer
-	int file_poisiton;
+	int file_position;
  }per_process_entry;
 
 
@@ -30,7 +30,7 @@ void p_printList() {
 	
    //start from the beginning
    while(ptr != NULL) {
-      printf("(%d,%s) ",ptr->key,ptr->data.firstname);
+      printf("(%d,%d) ",ptr->key,ptr->data.fcb_index);
       ptr = ptr->next;
    }
 	
@@ -53,7 +53,7 @@ void p_printListToFile( char * fileName) {
 
 
 //insert link at the first location
-void p_insertFirst(int key,  student data) {
+void p_insertFirst(int key,  per_process_entry data) {
    //create a link
     process_node *link = ( process_node*) malloc(sizeof( process_node));
 	
@@ -106,7 +106,7 @@ bool p_isEmpty() {
   	}      
 	
    	//if data found, return the current Link
-	 student_node** result = &current;
+	process_node** result = &current;
    	return result;
 
 }
@@ -151,7 +151,7 @@ bool p_isEmpty() {
 
 int p_length() {
    int length = 0;
-    student_node *current;
+   process_node *current;
 	
    for(current = p_head; current != NULL; current = current->next) {
       length++;
@@ -168,7 +168,7 @@ void p_sort() {
     process_node *current;
     process_node *next;
 	
-   int size = s_length();
+   int size = p_length();
    k = size ;
 	
    for ( i = 0 ; i < size - 1 ; i++, k-- ) {
@@ -177,7 +177,7 @@ void p_sort() {
 		
       for ( j = 1 ; j < k ; j++ ) {   
 		
-         if ( current->data.sid > next->data.sid ) {
+         if ( current->key > next->key ) {
             tempData = current->data;
             current->data = next->data;
             next->data = tempData;

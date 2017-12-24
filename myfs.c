@@ -13,6 +13,7 @@
 typedef struct fcb{
 	char filename[32];
 	int startAddress;
+	char buffer[28];
 } fcb;
 
 
@@ -24,7 +25,7 @@ typedef struct system_wide_entry {
 
 typedef struct per_process_entry {
 	int fcb_index;//fcb pointer
-	int file_poisiton;
+	int file_position;
 }per_process_entry;
 
 
@@ -37,6 +38,7 @@ typedef struct volume_control {
 	int freeFCB;
 	int pointerToFAT;
 	int pointerToFCB;
+	int buffer;
 }volume_control;
 
 
@@ -50,7 +52,8 @@ const int fatBlockSize = 24;
 system_wide_entry* system_wide_table;
 per_process_entry* per_process_table;
 int file_descriptor_index;
-
+int **fatTableCached = NULL;
+volume_control* volumeControlCached = NULL;
 
 /* 
    Reads block blocknum into buffer buf.
@@ -98,6 +101,7 @@ int putblock (int blocknum, void *buf)
 	}
 	
 	n = write (disk_fd, buf, BLOCKSIZE); 
+	//printf("put block n = %d\n", n);
 	if (n != BLOCKSIZE) 
 		return (-1); 
 
@@ -160,54 +164,76 @@ int myfs_makefs(char *vdisk)
 	// perform your format operations here. 
 	printf ("formatting disk=%s, size=%d\n", vdisk, disk_size); 
 	
+	
 	//Volume Control
-	volume_control* myVolumeControl = (volume_control*) malloc( sizeof(volume_control) );
-	myVolumeControl->numberOfBlocks = BLOCKCOUNT;
-	myVolumeControl->sizeOfBlocks = BLOCKSIZE;
+	volume_control* myVolumeControl = (volume_control*) malloc( 64* sizeof(volume_control) );
+	myVolumeControl[0].numberOfBlocks = BLOCKCOUNT;
+	myVolumeControl[0].sizeOfBlocks = BLOCKSIZE;
 	
-	myVolumeControl->freeBlockCount = (3/4) * BLOCKCOUNT;
-	strncpy(myVolumeControl->nameOfDisk, vdisk, 32);
-	myVolumeControl->fcbCount = 0;
-	myVolumeControl->freeFCB = MAXFILECOUNT;
-	myVolumeControl->pointerToFAT = 3*BLOCKSIZE;
-	myVolumeControl->pointerToFCB = 1*BLOCKSIZE;
+	myVolumeControl[0].freeBlockCount = (3/4) * BLOCKCOUNT;
+	strncpy(myVolumeControl[0].nameOfDisk, vdisk, 32);
+	myVolumeControl[0].fcbCount = 0;
+	myVolumeControl[0].freeFCB = MAXFILECOUNT;
+	myVolumeControl[0].pointerToFAT = 3*BLOCKSIZE;
+	myVolumeControl[0].pointerToFCB = 1*BLOCKSIZE;
+	myVolumeControl[0].buffer = 0;
 
-	printf("%lu\n", sizeof(myVolumeControl) );
 
-	/*
-	volume_control* temp = realloc( myVolumeControl, 4096);
-	if( temp != NULL) {
-		myVolumeControl = temp;
+	//We might not need to initialize the other indexes as they act as buffers for the block
+	/*	
+	for( int i = 1; i < 64; i++) {
+		myVolumeControl[i].numberOfBlocks = BLOCKCOUNT;
+		myVolumeControl[i].sizeOfBlocks = BLOCKSIZE;
+	
+		myVolumeControl[i].freeBlockCount = (3/4) * BLOCKCOUNT;
+		strncpy(myVolumeControl[i].nameOfDisk, vdisk, 32);
+		myVolumeControl[i].fcbCount = 0;
+		myVolumeControl[i].freeFCB = MAXFILECOUNT;
+		myVolumeControl[i].pointerToFAT = 3*BLOCKSIZE;
+		myVolumeControl[i].pointerToFCB = 1*BLOCKSIZE;
+		myVolumeControl[i].buffer = 0;
 	}
 	*/
-	printf("%lu\n", sizeof(myVolumeControl) );
-	
-	if( putblock ( 1, myVolumeControl) != 0 ){
-		printf("error while putting volumeControl block\n");
-		exit(1);
+		
+	if( putblock ( 0, myVolumeControl) != 0 ){
+			printf("error while putting volumeControl block\n");
+			return -1;
 	}
 
-	volume_control* temp = (volume_control*) malloc( sizeof(volume_control) );
-	getblock( 1, temp);
-	printf("%d\n", temp->freeFCB);
+	free(myVolumeControl);
+	//free(temp);
 
-	/*
-	char *temp = (char*) malloc( sizeof(char));
-	memcpy(temp, myVolumeControl, sizeof(myVolumeControl));
-	*/
+	//Self-check
+	volume_control* temp = (volume_control*) malloc( 64*sizeof(volume_control) );
+	getblock( 0, temp);
+	//printf("%d\n", temp[0].freeFCB);
 
+	free(temp);	
+	
 
 	//FAT
-	for(int index = 1; index < fatBlockSize; index++){
+	for(int index = 0; index < fatBlockSize; index++){
 		int *a;
-		a = malloc(BLOCKSIZE);
-		for(int i = 0; i < BLOCKSIZE; i += 1){
+		a = (int*) malloc(BLOCKSIZE);
+		for(int i = 0; i < BLOCKSIZE/4; i += 1){
 			a[i] = -1;
 		}
 		putblock(index+3, a);
+		free(a);
 	}
 
-	//FCB
+	//Self-check
+	int* trial = (int*) malloc(BLOCKSIZE);
+	if( getblock(3, trial) != 0) {
+		printf("Error\n");
+	}
+	else {
+		//printf("%d\n", trial[0] );
+	}
+	free(trial);
+
+	
+	//FCB - is divided into two blocks	
 	fcb *a = malloc(sizeof(fcb)*64);
 	fcb *b = malloc(sizeof(fcb)*64);
 	//a[0].filename = "cevat";
@@ -216,13 +242,26 @@ int myfs_makefs(char *vdisk)
 	for(int index = 0; index < 64; index++){
 		strcpy(a[index].filename, "");
 		a[index].startAddress = -1;
-		strcpy(b[index].filename, "");
+
 		b[index].startAddress = -1;
+		strcpy(b[index].filename, "");
 	}
 	//put_fcbs(&a);
 	
 	putblock(1, a);
 	putblock(2, b);
+
+	//Self check
+	fcb *fcb_trial = malloc(sizeof(fcb)*64);
+	if( getblock(1, fcb_trial) != 0) {
+		printf("Error\n");
+	}
+	else {
+		//printf("First fcb name is %s start address is %d\n", fcb_trial[0].filename, fcb_trial[0].startAddress);
+	}
+	free(fcb_trial);
+	free(a);
+	free(b);
 	
 
 	fsync (disk_fd); 
@@ -255,16 +294,66 @@ int myfs_mount (char *vdisk)
 
 	printf ("myfs_mount: mounting %s, size=%d\n", disk_name, 
 		(int) finfo.st_size);  
+	
 	disk_size = (int) finfo.st_size; 
 	disk_blockcount = disk_size / BLOCKSIZE; 
 
-	// perform your mount operations here
+	// performing your mount operations here
 
-	// write your code
+	//System_wide_entry
 	system_wide_entry* system_wide_table = malloc(128*sizeof(system_wide_entry));
+	
+	//Per-process-table, implemented as linked list
+	
 	file_descriptor_index = 0;
+	
+	//Example per-process-table addition
+	/*
+	per_process_entry* new_entry = malloc( sizeof(per_process_entry));
+	new_entry->fcb_index = 0;
+	new_entry->file_position = 0;
+	
+	p_insertFirst(file_descriptor_index, *new_entry);
+	*/
 
+	//Volume control is cached into memory
+	volumeControlCached = malloc(sizeof(volume_control));
+	volume_control* temp_volume_control = malloc(BLOCKSIZE);
+	getblock( 0, temp_volume_control);
 
+	volumeControlCached->numberOfBlocks = temp_volume_control[0].numberOfBlocks;
+	volumeControlCached->sizeOfBlocks = temp_volume_control[0].sizeOfBlocks;
+	volumeControlCached->freeBlockCount = temp_volume_control[0].freeBlockCount;
+	strncpy(volumeControlCached->nameOfDisk, temp_volume_control[0].nameOfDisk, 32);
+	volumeControlCached->fcbCount = temp_volume_control[0].fcbCount;
+	volumeControlCached->freeFCB = temp_volume_control[0].freeFCB;
+	volumeControlCached->pointerToFAT = temp_volume_control[0].pointerToFAT;
+	volumeControlCached->pointerToFCB = temp_volume_control[0].pointerToFCB;
+	volumeControlCached->buffer = temp_volume_control[0].buffer;
+	
+	//printf("%d\n", volumeControlCached->freeFCB);
+	free(temp_volume_control);
+
+	
+	//FAT table is cached into memory
+	//fatTableCached = malloc(fatBlockSize*BLOCKSIZE*sizeof(int) ); using 2d array instead for efficiency
+	fatTableCached = malloc(sizeof(int*)*fatBlockSize);
+	for( int i = 0; i < fatBlockSize; i++) {
+		//printf("%d\n", BLOCKSIZE);
+		fatTableCached[i] = malloc(sizeof(int)*BLOCKSIZE);
+		if (!fatTableCached[i]) { 
+			perror("malloc arr"); 
+			return -1;
+		}
+		
+		if( getblock(i+3, fatTableCached[i]) != 0) {
+			printf("Error\n");
+			return -1;
+		}
+		else {
+			//printf("i is %d and fat table is cached %d\n", i, fatTableCached[i][0]);
+		}
+	}
 	
 	/* you can place these returns wherever you want. Below
 	   we put them at the end of functions so that compiler will not
@@ -276,23 +365,144 @@ int myfs_mount (char *vdisk)
 
 int myfs_umount()
 {
-	// perform your unmount operations here
+	//performing your unmount operations here
 
-	// write your code
+	//Writing back the cached metadata into the disk
+
+	//Control if not mounted
+	if( volumeControlCached == NULL || fatTableCached == NULL ) {
+		printf("Error, the file system is not mounted!\n");
+		return -1;
+	}
+
+	//Volume Control block
+	volume_control* temp_volume_control = malloc(BLOCKSIZE);
+
+	temp_volume_control[0].numberOfBlocks = volumeControlCached->numberOfBlocks; 
+	temp_volume_control[0].sizeOfBlocks = volumeControlCached->sizeOfBlocks;
+	temp_volume_control[0].freeBlockCount = volumeControlCached->freeBlockCount;
+	strncpy(temp_volume_control[0].nameOfDisk, volumeControlCached->nameOfDisk, 32);
+	temp_volume_control[0].fcbCount = volumeControlCached->fcbCount;
+	temp_volume_control[0].freeFCB = volumeControlCached->freeFCB;
+	temp_volume_control[0].pointerToFAT = volumeControlCached->pointerToFAT;
+	temp_volume_control[0].pointerToFCB = volumeControlCached->pointerToFCB;
+	temp_volume_control[0].buffer = volumeControlCached->buffer;
+	
+	putblock(0, temp_volume_control);
+
+	//printf("%d\n", temp_volume_control[0].freeFCB);
+	free(temp_volume_control);
+	free(volumeControlCached);
+	volumeControlCached = NULL;
+
+	//FAT Table
+	for( int i = 0; i < fatBlockSize; i++) {
+		if( putblock(i+3, fatTableCached[i]) != 0) {
+			printf("Error\n");
+			return -1;
+		}
+		else {
+			//printf("i is %d and fat table is cached back to memory %d\n", i, fatTableCached[i][0]);
+			free(fatTableCached[i] );
+		}
+	}
+	
+
+	free(fatTableCached);
+	fatTableCached = NULL;
+
 
 	fsync (disk_fd); 
 	close (disk_fd); 
 	return (0); 
 }
 
+int getFreeBlock() {
+	for( int i = 0; i < fatBlockSize; i++) {
+		for( int j = 0; j < BLOCKSIZE/4; j++) {
+			if(fatTableCached[i][j] == -1) {
+				return (i*1024) + j;
+			}
+		}
+	}
+	return -1;
+}
 
-/* create a file with name filename */
+
+/* create a file with name filename
+  returns 0 if file is successfully created,
+  returns -1 if it can't be created, (no space or file limit exceeds),
+  returns -2 if the file name already exists in the disk
+ */
 int myfs_create(char *filename)
 {
+	int result = -1;
+	int freeBlockIndex = 0;
 
-	// write your code 
 
-	return (0); 
+	//FCB - is divided into two blocks	
+	fcb *a = malloc(sizeof(fcb)*64);
+	fcb *b = malloc(sizeof(fcb)*64);
+	
+	getblock(1, a);
+	getblock(2, b);
+
+	//Check if the file name already exists
+	for( int i = 0; i < 64; i++) {
+		if( strcmp( a[i].filename, filename) == 0) {//That means a file with the same file name exists
+			printf("Error, a file with the filename already exist in the disk!\n");
+			result = -2;
+			break;
+		}
+		else if( strcmp( b[i].filename, filename) == 0) {
+			printf("Error, a file with the filename already exist in the disk!\n");
+			result = -2;	
+			break;
+		}
+
+	}
+	
+	if( result != -2) {
+		for( int i = 0; i < 64;  i++) {
+			if( a[i].startAddress == -1) {//That means it is available
+				freeBlockIndex = getFreeBlock();
+				a[i].startAddress = freeBlockIndex;
+				strncpy(a[i].filename, filename, 32);
+				result = 0;
+				
+				//Updating the FAT
+				//Initialy only one block is allocated for the file, so other blocks exist for the table
+				fatTableCached[freeBlockIndex/1024][freeBlockIndex%1024] = -2;
+		
+				//Putting the changes
+				putblock(1,a);
+				
+				break;
+			}
+			else if( b[i].startAddress == -1) {
+				freeBlockIndex = getFreeBlock();
+				b[i].startAddress = freeBlockIndex;
+				strncpy(b[i].filename, filename, 32);
+				result = 0;
+				
+				//Updating the FAT
+				//Initialy only one block is allocated for the file, so other blocks exist for the table
+				fatTableCached[freeBlockIndex/1024][freeBlockIndex%1024] = -2;
+		
+				//Putting the changes
+				putblock(2,b);
+				
+				break;
+			}
+		}
+	}
+	
+	
+	//free the memory
+	free(a);
+	free(b);
+
+	return result; 
 }
 
 
