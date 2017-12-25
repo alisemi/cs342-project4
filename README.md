@@ -1,7 +1,7 @@
 # cs342fall2017_p4
 
-Mehmetali Semi YENÝMOL
+Mehmetali Semi YENÄ°MOL
 21401565
 
-Cevat Barýþ YILMAZ
+Cevat BarÄ±ÅŸ YILMAZ
 21401715
