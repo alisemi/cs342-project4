@@ -42,11 +42,11 @@ typedef struct volume_control {
 	int buffer;
 }volume_control;
 
-struct process_node {
+typedef struct process_node {
 	per_process_entry data;
 	int key;
 	struct process_node *next;
-};
+}process_node;
 
 
 // Global Variables
@@ -55,11 +55,15 @@ int  disk_size;        // size in bytes - a power of 2
 int  disk_fd;          // disk file handle
 int  disk_blockcount;  // block count on disk
 const int fatBlockSize = 24;
+const int OFFSET = 8192;
 
 system_wide_entry* system_wide_table;
 int file_descriptor_index;
 int **fatTableCached = NULL;
 volume_control* volumeControlCached = NULL;
+
+int getFreeBlock();
+bool isFDValid(int fd);
 
 /* 
    Reads block blocknum into buffer buf.
@@ -129,10 +133,11 @@ int myfs_diskcreate (char *vdisk)
 	size = DISKSIZE; 
 	numblocks = DISKSIZE / BLOCKSIZE; 
 
-	printf ("diskname=%s size=%d blocks=%d\n", vdisk, size, numblocks); 
+	//printf ("diskname=%s size=%d blocks=%d\n", vdisk, size, numblocks); 
 	ret = open (vdisk,  O_CREAT | O_RDWR, 0666); 	
 	if (ret == -1) {
-		printf ("could not create disk\n"); 
+		//printf ("could not create disk\n"); 
+		fprintf(stderr, "%s", "could not create disk!\n");
 		return -1;
 	}
 					
@@ -142,13 +147,14 @@ int myfs_diskcreate (char *vdisk)
 		//printf ("block=%d\n", i); 
 		n = write (fd, buf, BLOCKSIZE); 
 		if (n != BLOCKSIZE) {
-			printf ("write error\n");
+			//printf ("write error\n");
+			fprintf(stderr, "%s", "could not create disk!\n");
 			return -1;
 		}
 	}	
 	close (fd); 
 						
-	printf ("created a virtual disk=%s of size=%d\n", vdisk, size);	
+	//printf ("created a virtual disk=%s of size=%d\n", vdisk, size);	
 
   	return(0); 
 }
@@ -163,12 +169,13 @@ int myfs_makefs(char *vdisk)
 
 	disk_fd = open (disk_name, O_RDWR); 
 	if (disk_fd == -1) {
-		printf ("disk open error %s\n", vdisk); 
+		//printf ("disk open error %s\n", vdisk);
+		fprintf(stderr, "%s", "disk open error!\n");
 		exit(1); 
 	}
 	
 	// perform your format operations here. 
-	printf ("formatting disk=%s, size=%d\n", vdisk, disk_size); 
+	//printf ("formatting disk=%s, size=%d\n", vdisk, disk_size); 
 	
 	
 	//Volume Control
@@ -202,19 +209,21 @@ int myfs_makefs(char *vdisk)
 	*/
 		
 	if( putblock ( 0, myVolumeControl) != 0 ){
-			printf("error while putting volumeControl block\n");
+			//printf("error while putting volumeControl block\n");
+			fprintf(stderr, "%s", "error while putting volume control block!\n");
 			return -1;
 	}
 
 	free(myVolumeControl);
-	//free(temp);
 
 	//Self-check
+	/*
 	volume_control* temp = (volume_control*) malloc( 64*sizeof(volume_control) );
 	getblock( 0, temp);
 	//printf("%d\n", temp[0].freeFCB);
 
-	free(temp);	
+	free(temp);
+	*/
 	
 
 	//FAT
@@ -229,6 +238,7 @@ int myfs_makefs(char *vdisk)
 	}
 
 	//Self-check
+	/*
 	int* trial = (int*) malloc(BLOCKSIZE);
 	if( getblock(3, trial) != 0) {
 		printf("Error\n");
@@ -237,6 +247,7 @@ int myfs_makefs(char *vdisk)
 		//printf("%d\n", trial[0] );
 	}
 	free(trial);
+	*/
 
 	
 	//FCB - is divided into two blocks	
@@ -252,12 +263,12 @@ int myfs_makefs(char *vdisk)
 		b[index].startAddress = -1;
 		strcpy(b[index].filename, "");
 	}
-	//put_fcbs(&a);
 	
 	putblock(1, a);
 	putblock(2, b);
 
 	//Self check
+	/*
 	fcb *fcb_trial = malloc(sizeof(fcb)*64);
 	if( getblock(1, fcb_trial) != 0) {
 		printf("Error\n");
@@ -266,6 +277,8 @@ int myfs_makefs(char *vdisk)
 		//printf("First fcb name is %s start address is %d\n", fcb_trial[0].filename, fcb_trial[0].startAddress);
 	}
 	free(fcb_trial);
+	*/
+
 	free(a);
 	free(b);
 	
@@ -292,14 +305,14 @@ int myfs_mount (char *vdisk)
 	strcpy (disk_name, vdisk);
 	disk_fd = open (disk_name, O_RDWR); 
 	if (disk_fd == -1) {
-		printf ("myfs_mount: disk open error %s\n", disk_name); 
+		//printf ("myfs_mount: disk open error %s\n", disk_name); 
+		fprintf(stderr, "%s", "myfs_mount: disk open error \n");
 		exit(1); 
 	}
 	
 	fstat (disk_fd, &finfo); 
 
-	printf ("myfs_mount: mounting %s, size=%d\n", disk_name, 
-		(int) finfo.st_size);  
+	//printf ("myfs_mount: mounting %s, size=%d\n", disk_name, (int) finfo.st_size);  
 	
 	disk_size = (int) finfo.st_size; 
 	disk_blockcount = disk_size / BLOCKSIZE; 
@@ -352,12 +365,13 @@ int myfs_mount (char *vdisk)
 		//printf("%d\n", BLOCKSIZE);
 		fatTableCached[i] = malloc(sizeof(int)*BLOCKSIZE);
 		if (!fatTableCached[i]) { 
-			perror("malloc arr"); 
+			//perror("malloc arr");
+			fprintf(stderr, "%s", "malloc arr\n");
 			return -1;
 		}
 		
 		if( getblock(i+3, fatTableCached[i]) != 0) {
-			printf("Error\n");
+			fprintf(stderr, "%s", "Error while caching the FAT\n");
 			return -1;
 		}
 		else {
@@ -381,7 +395,8 @@ int myfs_umount()
 
 	//Control if not mounted
 	if( volumeControlCached == NULL || fatTableCached == NULL ) {
-		printf("Error, the file system is not mounted!\n");
+		//printf("Error, the file system is not mounted!\n");
+		fprintf(stderr, "%s", "Error, the file system is not mounted!\n");
 		return -1;
 	}
 
@@ -408,7 +423,8 @@ int myfs_umount()
 	//FAT Table
 	for( int i = 0; i < fatBlockSize; i++) {
 		if( putblock(i+3, fatTableCached[i]) != 0) {
-			printf("Error\n");
+			//printf("Error\n");
+			fprintf(stderr, "%s", "Error, while caching the FAT back to disk!\n");
 			return -1;
 		}
 		else {
@@ -440,18 +456,6 @@ int myfs_umount()
 	return (0); 
 }
 
-int getFreeBlock() {
-	for( int i = 0; i < fatBlockSize; i++) {
-		for( int j = 0; j < BLOCKSIZE/4; j++) {
-			if(fatTableCached[i][j] == -1) {
-				return (i*1024) + j;
-			}
-		}
-	}
-	return -1;
-}
-
-
 /* create a file with name filename
   returns 0 if file is successfully created,
   returns -1 if it can't be created, (no space or file limit exceeds),
@@ -473,12 +477,14 @@ int myfs_create(char *filename)
 	//Check if the file name already exists
 	for( int i = 0; i < 64; i++) {
 		if( strcmp( a[i].filename, filename) == 0) {//That means a file with the same file name exists
-			printf("Error, a file with the filename already exist in the disk!\n");
+			//printf("Error, a file with the filename already exist in the disk!\n");
+			fprintf(stderr, "%s", "Error, a file with the filename already exist in the disk!\n");
 			result = -2;
 			break;
 		}
 		else if( strcmp( b[i].filename, filename) == 0) {
-			printf("Error, a file with the filename already exist in the disk!\n");
+			//printf("Error, a file with the filename already exist in the disk!\n");
+			fprintf(stderr, "%s", "Error, a file with the filename already exist in the disk!\n");
 			result = -2;	
 			break;
 		}
@@ -524,7 +530,11 @@ int myfs_create(char *filename)
 	//free the memory
 	free(a);
 	free(b);
-
+	
+	//Opening the file
+	if( result == 0) {
+		return myfs_open(filename);
+	}
 	return result; 
 }
 
@@ -553,8 +563,8 @@ int myfs_open(char *filename)
 			break;
 		}
 		else if( strcmp( b[i].filename, filename) == 0) {
-			strncpy( temp_fcb->filename, a[i].filename, 32);
-			temp_fcb->startAddress = a[i].startAddress;
+			strncpy( temp_fcb->filename, b[i].filename, 32);
+			temp_fcb->startAddress = b[i].startAddress;
 			fcbIndex = i+64;
 			break;
 		}
@@ -562,16 +572,16 @@ int myfs_open(char *filename)
 
 	//Check if the file is already opened
 	if( fcbIndex > -1) { //then file is created and has entry in fcb
-		printf("fcbIndex is %d\n", fcbIndex);
+		//printf("fcbIndex is %d\n", fcbIndex);
 		if( system_wide_table[fcbIndex].count <= 0 ) { //then no entry in the system_wide_table yet
 			//system_wide_table[fcbIndex].count = 1;
-			printf("adding the fcb to system_wide\n");
+			//printf("adding the fcb to system_wide\n");
 			system_wide_table[fcbIndex].fcb_instance = malloc( sizeof(fcb) );
 			system_wide_table[fcbIndex].fcb_instance->startAddress = temp_fcb->startAddress;
 			strncpy(system_wide_table[fcbIndex].fcb_instance->filename, temp_fcb->filename, 32);
 		}
 		//adding the per_process_entry
-		printf("adding the per_process_entry\n");
+		//printf("adding the per_process_entry\n");
 
 		system_wide_table[fcbIndex].count += 1;
 		per_process_entry new_entry;
@@ -594,43 +604,321 @@ int myfs_open(char *filename)
 /* close file filename */
 int myfs_close(int fd)
 {
+	if(!isFDValid(fd) ){
+		//printf("Error: No file has found for given file descriptor!\n");
+		fprintf(stderr, "%s", "Error: No file has found for given file descriptor!\n");
+		return -1;
+	}
+	process_node* t= *(p_find(fd));
 
-	// write your code
+	//Check the system_wide_table
+	per_process_entry cur_entry = t->data;
+	//printf("File to be closed has the fcb index of %d\n", cur_entry.fcb_index);
+	int cur_fcb_index = cur_entry.fcb_index;
+
+	//delete the per_process_entry
+	p_delete(fd);
+
+	//Decrease the count
+	system_wide_table[cur_fcb_index].count += -1; 
+
+	/*
+	if( system_wide_table[cur_fcb_index].count <= 0) { //then no more process has opened the file
+		//delete the fcb copy from system_wide_table
+		free(system_wide_table[cur_fcb_index].fcb_instance );
+		system_wide_table[cur_fcb_index].fcb_instance = NULL;
+	}
+	*/
+	
+	free(t);
 
 	return (0); 
 }
 
 int myfs_delete(char *filename)
 {
+	int blockNo;
+	if( system_wide_table == NULL) {
+		//printf("Disk is not mounted!\n");
+		fprintf(stderr, "%s", "Disk is not mounted!\n");		
+		return -1;
+	}
+	
+	
+	int fcbIndex = -1;
+	//Search through the system_wide_table if the file is open, so can't be deleted
+	//Also control if the file exists
+	for( int i = 0; i < 128; i++) {
+		if( system_wide_table[i].fcb_instance != NULL) {
+			if(strcmp(system_wide_table[i].fcb_instance->filename, filename) == 0){
+				fcbIndex = i;
+				if( system_wide_table[i].count > 0) { //then file is open
+					//printf("Error, open file can't be deleted!\n");
+					fprintf(stderr, "%s", "Error, open file can't be deleted!\n");		
+					return -1;
+				}
+				break;
+			}
+		}
+	}
 
-	// write your code
+	
+
+	if( fcbIndex == -1) {//It is not in system_wide_table yet it can be in the disk ( not opened but created)
+		//FCB - is divided into two blocks	
+		fcb *a = malloc(sizeof(fcb)*64);
+		fcb *b = malloc(sizeof(fcb)*64);
+	
+		getblock(1, a);
+		getblock(2, b);
+	
+		//Check if the file name  exists and find it
+		for( int i = 0; i < 64; i++) {
+			if( strcmp( a[i].filename, filename) == 0) {//That means a file with the same file name exists
+				fcbIndex = i;
+				break;
+			}
+			else if( strcmp( b[i].filename, filename) == 0) {
+				fcbIndex = i+64;
+				break;
+			}
+
+		}
+
+		if( fcbIndex == -1) { //It is not even in the disk, file does not exist
+			//printf("Error, file with given file name does not exist!\n");
+			fprintf(stderr, "%s", "Error, file with given file name does not exist!\n");		
+			return -1;
+		}
+
+		//reset the blocks that file has
+		if( fcbIndex < 64) {
+			blockNo = a[fcbIndex].startAddress;
+		}
+		else {
+			blockNo = b[fcbIndex%64].startAddress;
+		}
+
+		free(a);
+		free(b);
+	
+	}
+	
+	else { //Then it is already in system_wide_table		
+		blockNo = system_wide_table[fcbIndex].fcb_instance->startAddress; 
+		
+		//Delete the fcb entry from syste_wide_table(memory)
+		free( system_wide_table[fcbIndex].fcb_instance );
+		system_wide_table[fcbIndex].count = 0;
+		system_wide_table[fcbIndex].fcb_instance = NULL;
+
+	}
+
+	//reset the blocks that file has
+	do {
+		//printf( "currrent block no is %d\n", blockNo);
+		void *zero = malloc(BLOCKSIZE);
+		memset(zero, '\0', BLOCKSIZE);
+		putblock(8192+blockNo, zero);
+
+		//update the fat table
+		int temp = fatTableCached[blockNo/1024][blockNo%1024];
+		fatTableCached[blockNo/1024][blockNo%1024] = -1;
+		blockNo = temp;
+
+	}while( !(blockNo <= -2));
+
+	
+	//delete the fcb entry from disk
+	fcb* temp = malloc( 64*sizeof(fcb) );
+	getblock(1+(fcbIndex/64), temp);
+
+	strcpy(temp[fcbIndex%64].filename, "");
+	temp[fcbIndex%64].startAddress = -1;
+	
+	putblock(1+(fcbIndex/64), temp);
+
+	free(temp);
 
 	return (0); 
 }
 
 int myfs_read(int fd, void *buf, int n)
 {
-	int bytes_read = -1; 
 
-	// write your code
-	
-	return (bytes_read); 
+	//int bytes_read = -1;
 
+	//system_wide_entry* b = &(system_wide_table[(*(p_find(fd)))->data.fcb_index]);
+	//void *buffer = malloc(BLOCKSIZE);
+
+	//int c = n;
+	//int a = b->startAddress;
+	//while(a>0 && c > 0){
+	//getBlock(b->fcb_instance->startAddress, buf);
+	//}
+
+	//printf("What I read:\n%c", buf);
+
+
+	//return (bytes_read);
+
+	//////////////////
+
+	if(!isFDValid(fd) ){
+		//printf("Error: No file has found for given file descriptor!\n");
+		fprintf(stderr, "%s", "Error: No file has found for given file descriptor!\n");		
+		return -1;
+	}
+
+
+	//int bytes_written = -1;
+	int nn = n;
+	int size = myfs_filesize(fd);
+
+	per_process_entry *p = &((*(p_find(fd)))->data);
+
+
+
+	system_wide_entry* b = &(system_wide_table[p->fcb_index]);
+
+	if( p->file_position + nn > size){
+	nn = size -p->file_position;
+	}
+	char *buffer = (char*) buf;
+
+
+   
+	int a = 0;
+	while(nn > 0){
+	int block = p->file_position / BLOCKSIZE;
+	int seek = p->file_position % BLOCKSIZE;
+	int add = b->fcb_instance->startAddress;
+	while(block != 0){
+	    add = fatTableCached[add/1024][add%1024];
+	    block--;
+	    if(add < 0){
+		return a;           
+	    }
+	}
+	//printf("Reading from block %d\n", add);
+	char *buff = malloc(BLOCKSIZE);
+	getblock(add + OFFSET, buff);
+
+	for(int index = seek; index < BLOCKSIZE && nn > 0; index++){
+	    //printf("Reading to bit %d\n, value %c", ccc*BLOCKSIZE + a, buff[index]);
+	    buffer[a++] = buff[index];
+	    nn--;
+	    p->file_position = p->file_position + 1;
+	}
+	//putblock(add + OFFSET, buf);
+	//nn -= BLOCKSIZE;
+	}
+
+	//printf("A:%d\n--\n", a);
+
+
+	return (a); 
 }
 
 int myfs_write(int fd, void *buf, int n)
 {
-	int bytes_written = -1; 
+	if(!isFDValid(fd) ){
+		//printf("Error: No file has found for given file descriptor!\n");
+		fprintf(stderr, "%s", "Error: No file has found for given file descriptor!\n");		
+		return -1;
+	}
 
-	// write your code
+	int nn = n;
+	char *buffer = (char*) buf;
 
-	return (bytes_written); 
+
+	per_process_entry *p = &((*(p_find(fd)))->data);
+	//printf("aaaaaaaaaaaaaaaaaa %d\n", p->fcb_index);
+
+
+
+	system_wide_entry* b = &(system_wide_table[p->fcb_index]);
+	//printf("aaaaaaaaaaaaaaaaaa %d\n", b->fcb_instance->startAddress);
+	int a = 0;
+	while(nn > 0){
+	int block = p->file_position / BLOCKSIZE;
+	int seek = p->file_position % BLOCKSIZE;
+	int add = b->fcb_instance->startAddress;
+	//printf("Start address is %d for %d\n", add, fd);
+	while(block != 0){
+	    int madd = add;
+	    add = fatTableCached[add/1024][add%1024];
+	    block--;
+	    if(add <= -2){
+		add = getFreeBlock();
+		if(add == -1)
+		    return -1;
+		fatTableCached[madd/1024][madd%1024] = add;
+		fatTableCached[add/1024][add%1024] = -2;
+	    }
+	}
+	char *buff = malloc(BLOCKSIZE);
+	getblock(add + OFFSET, buff);
+
+	//printf("Writing to block %d\n", add);
+	for(int index = seek; index < BLOCKSIZE && nn > 0; index++){
+	    //printf("Writing to %d, %d\n", ccc, a);
+	    buff[index] = buffer[a++];
+	    nn--;
+	    p->file_position = p->file_position + 1;
+	    if (fatTableCached[add/1024][add%1024] < 0 && fatTableCached[add/1024][add%1024] > -(3 + index))
+		fatTableCached[add/1024][add%1024] = -(3 + index);
+	}
+	putblock(add + OFFSET, buff);
+	//printf("b:%d\n--\n", a);
+	}
+	//printf("b:%d\n--\n", a);
+	//p->file_position = p->file_position + n;
+
+
+	return (a); 
 } 
 
 int myfs_truncate(int fd, int size)
 {
 
-	// write your code
+	if(!isFDValid(fd) ){
+		//printf("Error: No file has found for given file descriptor!\n");
+		fprintf(stderr, "%s", "Error: No file has found for given file descriptor!\n");		
+		return -1;
+	}
+
+	int actual = myfs_filesize(fd);
+	if(size > actual)
+		return -1;
+
+	per_process_entry *p = &((*(p_find(fd)))->data);
+	system_wide_entry* b = &(system_wide_table[p->fcb_index]);
+
+	int newBlockSize = size / BLOCKSIZE + 1;
+	int newByteSize = size % BLOCKSIZE;
+	if (newByteSize == 0)
+	newBlockSize -= 1;
+	if(newBlockSize == 0)
+	newBlockSize = 1;
+	//printf("New block size: %d, new byte size: %d\n", newBlockSize, newByteSize);
+	int add = b->fcb_instance->startAddress;
+	int temp = newBlockSize - 1;
+	while(temp != 0){
+		add = fatTableCached[add/1024][add%1024];
+		temp--;
+	}
+	int last = add;
+	int pre;
+	while(fatTableCached[add/1024][add%1024] >= 0){
+		pre = add;
+		add = fatTableCached[add/1024][add%1024];
+		fatTableCached[pre/1024][pre%1024] = -1;
+	}
+
+	fatTableCached[add/1024][add%1024] = -1;
+	fatTableCached[last/1024][last%1024] = -(newByteSize + 2);
+
 
 	return (0); 
 } 
@@ -638,59 +926,161 @@ int myfs_truncate(int fd, int size)
 
 int myfs_seek(int fd, int offset)
 {
-	int position = -1; 
 
-	// write your code
+	if(!isFDValid(fd) ){
+		//printf("Error: No file has found for given file descriptor!\n");
+		fprintf(stderr, "%s", "Error: No file has found for given file descriptor!\n");		
+		return -1;
+	}
+	per_process_entry *p = &((*(p_find(fd)))->data);
 
-	return (position); 
+	int size = myfs_filesize(fd);
+
+	if(offset>size)
+	p->file_position = size;
+	else
+	p->file_position = offset;
+
+	return (p->file_position); 
 } 
 
 int myfs_filesize (int fd)
 {
-	int size = -1; 
-	
-	// write your code
+	if(!isFDValid(fd) ){
+		//printf("Error: No file has found for given file descriptor!\n");
+		fprintf(stderr, "%s", "Error: No file has found for given file descriptor!\n");		
+		return -1;
+	}
 
-	return (size); 
+	int size = 0;
+
+	process_node* t= *(p_find(fd));
+
+	per_process_entry p = t->data; 
+
+	system_wide_entry b = system_wide_table[p.fcb_index];
+	//printf("File_size...1\n");
+
+	int add = b.fcb_instance->startAddress;
+	//printf("OOOOO0OOOOOOOOOOOOOOOOOOOOOOOOOOOO %d\n", b.fcb_instance->startAddress);
+	add = fatTableCached[add/1024][add%1024];
+	while(add>=0){
+	//printf("Add is %d", add);
+	size += BLOCKSIZE;
+	//printf("Sizing...%d\n", size);
+	add = fatTableCached[add/1024][add%1024];
+	}
+	//printf("Add is %d", add);
+	//printf("Adding...%d\n", -(add + 2));
+	size += -(add + 2);
+
+	return (size);  
 }
 
 
 void myfs_print_dir ()
 {
 
-	// write your code
+	if( system_wide_table == NULL) {
+		//printf("Disk is not mounted!\n");
+		fprintf(stderr, "%s", "Disk is not mounted!\n");		
+		return;
+	}
 	
+	//FCB - is divided into two blocks	
+	fcb *a = malloc(sizeof(fcb)*64);
+	fcb *b = malloc(sizeof(fcb)*64);
+	
+	getblock(1, a);
+	getblock(2, b);
+
+
+	//Find the file in the FCB
+	for( int i = 0; i < 64; i++) {
+		if(  a[i].startAddress != -1) {
+			printf("%s\n", a[i].filename);
+		}
+		if( b[i].startAddress != -1) {
+			printf("%s\n", b[i].filename);
+		}
+	}
+
+	free(a);
+	free(b);
 }
 
 
 void myfs_print_blocks (char *  filename)
 {
+	if( system_wide_table == NULL) {
+		//printf("Disk is not mounted!\n");
+		fprintf(stderr, "%s", "Disk is not mounted!\n");		
+		return;
+	}
+	
+	int fcbIndex = -1;
+	//FCB - is divided into two blocks	
+	fcb *a = malloc(sizeof(fcb)*64);
+	fcb *b = malloc(sizeof(fcb)*64);
+	
+	getblock(1, a);
+	getblock(2, b);
+	
+	//Check if the file name  exists and find it
+	for( int i = 0; i < 64; i++) {
+		if( strcmp( a[i].filename, filename) == 0) {//That means a file with the same file name exists
+			fcbIndex = i;
+			break;
+		}
+		else if( strcmp( b[i].filename, filename) == 0) {
+			fcbIndex = i+64;
+			break;
+		}
 
-	// write your code
+	}
+
+	
+	if( fcbIndex == -1) {
+		//printf("Error, file with given filename doesn't exist!\n");
+		fprintf(stderr, "%s", "Error, file with given filename doesn't exist!\n");		
+		return;
+	}
+
+	printf("%s:", filename);
+	//reset the blocks that file has
+	int blockNo;
+	if( fcbIndex < 64) {
+		blockNo = a[fcbIndex].startAddress;
+	}
+	else {
+		blockNo = b[fcbIndex%64].startAddress;
+	}
+	do {
+		printf( " %d", blockNo);
+		blockNo = fatTableCached[blockNo/1024][blockNo%1024];
+	}while( !(blockNo <= -2));
+	printf("\n");
+
 
 }
 
 //Internal functions
-int get_fat(int index){
-	int block = index / 1024;
-	int seek = index % 1024;
-
-	int *a;
-	a = malloc(BLOCKSIZE);
-	getblock(block, (void*)a);
-	return a[seek];
-	
+int getFreeBlock() {
+	for( int i = 0; i < fatBlockSize; i++) {
+		for( int j = 0; j < BLOCKSIZE/4; j++) {
+			if(fatTableCached[i][j] == -1) {
+				return (i*1024) + j;
+			}
+		}
+	}
+	return -1;
 }
 
-int put_fat(int index, int value){
-	int block = index / 1024;
-	int seek = index % 1024;
-
-	int *a;
-	a = malloc(BLOCKSIZE);
-	getblock(block, (void*)a);
-	a[seek] = value;
-	putblock(block, (void*)a);
-	return a[seek];
+bool isFDValid(int fd){
+	process_node** t = p_find(fd);
+	if( t == NULL) {
+		return false;
+	}
+	return true;
 }
 
